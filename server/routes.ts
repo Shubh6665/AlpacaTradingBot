@@ -1,15 +1,17 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { getAlpacaClient, parseAlpacaWebSocketMessage } from "./alpaca";
 import { createStrategy } from "./strategies";
+import { getReinforcementLearningStrategy } from "./reinforcementLearning";
 import { z } from "zod";
 import { 
   insertApiKeySchema, 
   insertBotSettingsSchema, 
   insertSystemLogSchema, 
-  OrderRequest
+  OrderRequest,
+  MarketData
 } from "@shared/schema";
 
 // Active WebSocket connections with user IDs
@@ -55,17 +57,45 @@ async function handleAlpacaWebsocketMessage(userId: number, message: any) {
     
     // If bot is active, analyze the data with the strategy
     if (botSettings?.isActive) {
-      const strategy = createStrategy(botSettings.strategy as any);
-      const historicalData = []; // In a real implementation, fetch historical data
+      let signal;
       
-      const signal = strategy.analyze(marketData.symbol, [marketData], historicalData);
+      // Get historical data from cache (in a real implementation, this would be more sophisticated)
+      const historicalData: MarketData[] = [];
+      for (const [symbol, data] of marketDataCache.entries()) {
+        if (symbol === marketData.symbol) {
+          historicalData.push(data as MarketData);
+        }
+      }
       
-      // Log the signal
-      await storage.createSystemLog({
-        userId,
-        level: 'SIGNAL',
-        message: `${strategy.getName()} ${signal.action} signal detected for ${signal.symbol} (confidence: ${signal.confidence.toFixed(1)}%)`
-      });
+      // Check if we should use RL strategy or traditional strategies
+      if (botSettings.strategy === 'reinforcement') {
+        // Use the reinforcement learning implementation
+        const rlStrategy = getReinforcementLearningStrategy();
+        
+        // Update the RL model with the market data
+        rlStrategy.updateMarketData(marketData.symbol, marketData);
+        
+        // Generate a signal using the RL model
+        signal = rlStrategy.generateSignal(marketData.symbol, [marketData], historicalData);
+        
+        // Log the RL signal
+        await storage.createSystemLog({
+          userId,
+          level: 'SIGNAL',
+          message: `AI Reinforcement Learning ${signal.action} signal for ${signal.symbol} (confidence: ${signal.confidence.toFixed(1)}%)`
+        });
+      } else {
+        // Use traditional strategies
+        const strategy = createStrategy(botSettings.strategy as any);
+        signal = strategy.analyze(marketData.symbol, [marketData], historicalData);
+        
+        // Log the traditional signal
+        await storage.createSystemLog({
+          userId,
+          level: 'SIGNAL',
+          message: `${strategy.getName()} ${signal.action} signal detected for ${signal.symbol} (confidence: ${signal.confidence.toFixed(1)}%)`
+        });
+      }
       
       // Broadcast the signal
       broadcastToUser(userId, {
@@ -85,14 +115,40 @@ async function handleAlpacaWebsocketMessage(userId: number, message: any) {
             apiKey.environment === 'paper'
           );
           
-          // Create order
-          const orderRequest: OrderRequest = {
-            symbol: signal.symbol,
-            qty: 1, // This would be calculated based on position sizing and risk management
-            side: signal.action,
-            type: 'market',
-            time_in_force: 'gtc'
-          };
+          // Get account information for position sizing with RL model
+          const account = await alpaca.getAccount();
+          const accountValue = parseFloat(account.portfolio_value);
+          
+          // Create order - either use RL position sizing or basic sizing
+          let orderRequest: OrderRequest;
+          
+          if (botSettings.strategy === 'reinforcement') {
+            // Get order request from RL model with position sizing
+            const rlStrategy = getReinforcementLearningStrategy();
+            const rlOrder = rlStrategy.signalToOrder(signal, accountValue);
+            
+            // If the RL model returns an order, use it, otherwise use default
+            if (rlOrder) {
+              orderRequest = rlOrder;
+            } else {
+              orderRequest = {
+                symbol: signal.symbol,
+                qty: 1, // Default if RL doesn't generate an order
+                side: signal.action,
+                type: 'market',
+                time_in_force: 'gtc'
+              };
+            }
+          } else {
+            // Basic order for traditional strategies
+            orderRequest = {
+              symbol: signal.symbol,
+              qty: 1, // This would be calculated based on position sizing and risk management
+              side: signal.action,
+              type: 'market',
+              time_in_force: 'gtc'
+            };
+          }
           
           try {
             const order = await alpaca.submitOrder(orderRequest);
@@ -146,6 +202,45 @@ async function startTradingBot(userId: number) {
   const botSettings = await storage.getBotSettingsByUserId(userId);
   
   if (!apiKey || !botSettings || !botSettings.isActive) return;
+  
+  // Initialize the reinforcement learning strategy if selected
+  if (botSettings.strategy === 'reinforcement') {
+    try {
+      // Get the RL strategy instance
+      const rlStrategy = getReinforcementLearningStrategy();
+      
+      // Set up the Alpaca client for the RL model
+      const alpaca = getAlpacaClient(
+        apiKey.alpacaApiKey,
+        apiKey.alpacaSecretKey,
+        apiKey.environment === 'paper'
+      );
+      
+      // Set the Alpaca client in the RL strategy
+      rlStrategy.setAlpacaClient(alpaca);
+      
+      // Try to load a pre-trained model
+      await rlStrategy.loadModel().catch(err => {
+        console.warn('No pre-trained RL model found, starting with untrained model:', err);
+      });
+      
+      // Log RL model initialization
+      await storage.createSystemLog({
+        userId,
+        level: 'INFO',
+        message: 'Reinforcement learning model initialized'
+      });
+    } catch (error: any) {
+      console.error('Error initializing reinforcement learning model:', error);
+      
+      // Log the error
+      await storage.createSystemLog({
+        userId,
+        level: 'ERROR',
+        message: `Error initializing RL model: ${error.message}`
+      });
+    }
+  }
   
   // Log bot start
   await storage.createSystemLog({
