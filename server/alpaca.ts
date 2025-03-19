@@ -11,6 +11,7 @@ export class AlpacaClient {
   private isTestMode: boolean;
 
   constructor(apiKey: string, secretKey: string, isPaper: boolean = true) {
+    // Use environment variable names as per Alpaca documentation (underscores)
     this.apiKey = apiKey;
     this.secretKey = secretKey;
     this.baseUrl = isPaper
@@ -18,9 +19,8 @@ export class AlpacaClient {
       : "https://api.alpaca.markets";
     this.dataUrl = "https://data.alpaca.markets";
     
-    // Check if we're using test mode
-    // In test mode, allow hardcoded keys like 'TEST_KEY' to pass validation
-    this.isTestMode = ENABLE_TEST_MODE && 
+    // Test mode: if ENABLE_TEST_MODE true and key is a test key, then use mock data
+    this.isTestMode = ENABLE_TEST_MODE &&
       (this.apiKey === 'TEST_KEY' || this.apiKey.startsWith('TEST_'));
   }
 
@@ -30,13 +30,13 @@ export class AlpacaClient {
     data?: any,
     isData: boolean = false
   ): Promise<any> {
-    // If in test mode, return mock data
     if (this.isTestMode) {
       return this.getMockData(endpoint, method, data);
     }
     
     const url = `${isData ? this.dataUrl : this.baseUrl}${endpoint}`;
     
+    // Correct header names as per official docs: use underscores not dashes.
     const headers = {
       "APCA_API_KEY_ID": this.apiKey,
       "APCA_API_SECRET_KEY": this.secretKey,
@@ -51,12 +51,10 @@ export class AlpacaClient {
 
     try {
       const response = await fetch(url, options);
-      
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Alpaca API Error: ${response.status} - ${errorText}`);
       }
-      
       return await response.json();
     } catch (error) {
       console.error("Alpaca API request failed:", error);
@@ -64,9 +62,8 @@ export class AlpacaClient {
     }
   }
   
-  // Generate mock data for testing
+  // Generate mock data for testing (only used in test mode)
   private getMockData(endpoint: string, method: string, data?: any): any {
-    // Mock account data
     if (endpoint === "/v2/account") {
       return {
         id: "mock-account-id",
@@ -78,7 +75,6 @@ export class AlpacaClient {
       };
     }
     
-    // Mock order submission
     if (endpoint === "/v2/orders" && method === "POST") {
       const order = data as OrderRequest;
       return {
@@ -96,14 +92,10 @@ export class AlpacaClient {
       };
     }
     
-    // Mock positions
     if (endpoint === "/v2/positions") {
       if (method === "DELETE") {
-        // Simulate close all positions
         return [];
       }
-      
-      // Return mock positions
       return [
         {
           asset_id: "mock-asset-btc",
@@ -130,7 +122,6 @@ export class AlpacaClient {
       ];
     }
     
-    // Mock a single position
     if (endpoint.startsWith("/v2/positions/")) {
       const symbol = endpoint.split("/").pop();
       return {
@@ -146,7 +137,6 @@ export class AlpacaClient {
       };
     }
     
-    // Mock orders list
     if (endpoint.startsWith("/v2/orders") && method === "GET") {
       return [
         {
@@ -164,28 +154,23 @@ export class AlpacaClient {
       ];
     }
     
-    // By default return an empty object
     return {};
   }
 
-  // Account endpoints
+  // Account endpoint: fetch account info from Alpaca
   async getAccount(): Promise<AccountInfo> {
     try {
-      // Add a paper trading check to ensure proper endpoint usage
       const isPaper = this.baseUrl.includes("paper-api");
       const url = `${isPaper ? "https://paper-api.alpaca.markets" : "https://api.alpaca.markets"}/v2/account`;
-      
       const response = await fetch(url, {
         headers: {
           "APCA_API_KEY_ID": this.apiKey,
           "APCA_API_SECRET_KEY": this.secretKey
         }
       });
-      
       if (!response.ok) {
         throw new Error(`Alpaca API Error: ${response.status} - ${await response.text()}`);
       }
-      
       return await response.json();
     } catch (error) {
       console.error("Account validation error:", error);
@@ -212,7 +197,6 @@ export class AlpacaClient {
       end,
       limit: limit.toString(),
     });
-    
     return this.makeRequest(`/v2/stocks/bars?${params.toString()}`, "GET", undefined, true);
   }
 
@@ -226,7 +210,6 @@ export class AlpacaClient {
       status,
       limit: limit.toString(),
     });
-    
     return this.makeRequest(`/v2/orders?${params.toString()}`);
   }
 
@@ -259,27 +242,24 @@ export class AlpacaClient {
     return this.makeRequest("/v2/positions", "DELETE");
   }
 
-  // WebSocket connection string
+  // WebSocket connection string for market data streaming
   getWebSocketUrl(): string {
-    // In test mode, we don't need a real WebSocket URL
     if (this.isTestMode) {
       return 'ws://localhost:8080/mock';
     }
-    
     const environment = this.baseUrl.includes("paper") ? "paper" : "live";
     return `wss://${environment}-api.alpaca.markets/stream`;
   }
 
+  // WebSocket URL for crypto data
   getCryptoWebSocketUrl(): string {
-    // In test mode, we don't need a real WebSocket URL
     if (this.isTestMode) {
       return 'ws://localhost:8080/mock-crypto';
     }
-    
     return "wss://stream.data.alpaca.markets/v1beta1/crypto";
   }
 
-  // Websocket authentication payload
+  // WebSocket authentication payload
   getWebSocketAuthPayload(): any {
     return {
       action: "auth",
@@ -288,24 +268,18 @@ export class AlpacaClient {
     };
   }
   
-  // Generate mock WebSocket data for testing
+  // Generate mock market data for testing purposes
   generateMockMarketData(symbol: string): MarketData {
-    // Use a sine wave pattern to generate price movements for mock data
     const now = Date.now();
     const basePrice = symbol === 'BTCUSD' ? 26000 : 
                      symbol === 'ETHUSD' ? 1650 : 
-                     symbol === 'SOLUSD' ? 110 : 65; // Default for AVAX
-                     
-    // Generate a sine wave with some randomness
+                     symbol === 'SOLUSD' ? 110 : 65;
     const hourOfDay = new Date().getHours() + new Date().getMinutes() / 60;
-    const dailyCycle = Math.sin(hourOfDay / 24 * Math.PI * 2);
-    const randomness = (Math.random() - 0.5) * 0.01; // Small random component
-    
-    // Calculate price change as a percentage of the base price
-    const changePercent = dailyCycle * 0.02 + randomness; // Max +/- 2% plus randomness
+    const dailyCycle = Math.sin((hourOfDay / 24) * Math.PI * 2);
+    const randomness = (Math.random() - 0.5) * 0.01;
+    const changePercent = dailyCycle * 0.02 + randomness;
     const change = basePrice * changePercent;
     const price = basePrice + change;
-    
     return {
       symbol,
       price,
@@ -315,7 +289,7 @@ export class AlpacaClient {
     };
   }
 
-  // Subscribe to market data via websocket
+  // Subscribe to market data via WebSocket
   getWebSocketSubscribePayload(streams: string[]): any {
     return {
       action: "subscribe",
@@ -325,7 +299,7 @@ export class AlpacaClient {
     };
   }
 
-  // Market status
+  // Market status endpoints
   async getMarketClock(): Promise<any> {
     return this.makeRequest("/v2/clock");
   }
@@ -339,7 +313,7 @@ export class AlpacaClient {
     return this.makeRequest(`/v2/calendar${queryString}`);
   }
 
-  // Assets
+  // Assets endpoint
   async getAssets(status: string = 'active'): Promise<any> {
     return this.makeRequest(`/v2/assets?status=${status}`);
   }
@@ -349,47 +323,35 @@ export class AlpacaClient {
 let alpacaInstance: AlpacaClient | null = null;
 
 export function getAlpacaClient(apiKey?: string, secretKey?: string, isPaper: boolean = true): AlpacaClient {
-  // Always create a new instance if explicit credentials are provided
   if (apiKey && secretKey) {
     return new AlpacaClient(apiKey, secretKey, isPaper);
   }
-  
-  // Use singleton for environment variables or test mode
   if (!alpacaInstance) {
     const envApiKey = process.env.APCA_API_KEY_ID || "TEST_KEY";
     const envSecretKey = process.env.APCA_API_SECRET_KEY || "TEST_SECRET";
-    
     alpacaInstance = new AlpacaClient(envApiKey, envSecretKey, isPaper);
   }
-  
   return alpacaInstance;
 }
 
-// Parse websocket messages
+// Parse WebSocket messages to extract MarketData
 export function parseAlpacaWebSocketMessage(message: any): MarketData | null {
   try {
-    // Handle mock data format (direct MarketData objects)
     if (message && message.type === 'mock' && message.data) {
       return message.data as MarketData;
     }
-    
     if (!message || !message.data) return null;
-    
     const data = message.data;
-    
-    // Check if it's a bar update
     if (message.stream && message.stream.startsWith('B.')) {
       const symbol = message.stream.split('.')[1];
       return {
         symbol,
         price: parseFloat(data.c),
         timestamp: new Date(data.t).getTime(),
-        change: 0, // Calculate these based on previous data
+        change: 0,
         changePercent: 0,
       };
     }
-    
-    // Check if it's a trade update
     if (message.stream && message.stream.startsWith('T.')) {
       const symbol = message.stream.split('.')[1];
       return {
@@ -400,7 +362,6 @@ export function parseAlpacaWebSocketMessage(message: any): MarketData | null {
         changePercent: 0,
       };
     }
-    
     return null;
   } catch (error) {
     console.error("Error parsing Alpaca WebSocket message:", error);
