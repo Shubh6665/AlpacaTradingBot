@@ -356,8 +356,8 @@ export function getAlpacaClient(apiKey?: string, secretKey?: string, isPaper: bo
   
   // Use singleton for environment variables or test mode
   if (!alpacaInstance) {
-    const envApiKey = process.env.ALPACA_API_KEY || "TEST_KEY";
-    const envSecretKey = process.env.ALPACA_SECRET_KEY || "TEST_SECRET";
+    const envApiKey = process.env.APCA-API-KEY || "TEST_KEY";
+    const envSecretKey = process.env.APCA-API-SECRET-KEY || "TEST_SECRET";
     
     alpacaInstance = new AlpacaClient(envApiKey, envSecretKey, isPaper);
   }
