@@ -125,14 +125,21 @@ export function Sidebar({
           <div className="flex">
             <button 
               className={`flex-1 ${apiKeyInfo?.environment === 'paper' ? 'bg-[#2962FF] text-white' : 'bg-[#121722] text-[#B7BDC6]'} py-1 rounded-l text-xs font-medium`}
-              disabled={!apiKeyInfo?.hasApiKey}
+              onClick={() => {
+                if (apiKeyInfo?.hasApiKey) {
+                  onSaveApiKey(apiKeyInfo.environment === 'paper' ? 'TEST_KEY' : 'TEST_KEY', 'TEST_KEY', 'paper');
+                } else {
+                  setIsApiKeyModalOpen(true);
+                }
+              }}
             >
               Paper Trading
             </button>
             <button 
               className={`flex-1 ${apiKeyInfo?.environment === 'live' ? 'bg-[#2962FF] text-white' : 'bg-[#121722] text-[#B7BDC6]'} py-1 rounded-r text-xs`}
-              onClick={() => setIsApiKeyModalOpen(true)}
-              disabled={!apiKeyInfo?.hasApiKey}
+              onClick={() => {
+                setIsApiKeyModalOpen(true);
+              }}
             >
               Live Trading
             </button>
