@@ -1,0 +1,113 @@
+Aapke Alpaca trading bot ke liye zaruri API endpoints aur functionalities niche detailed taur par diye gaye hain, jo aapke bot ke liye important hain:
+
+## 1. Authentication aur Setup:
+- **API Key aur Secret generate karna**: Alpaca dashboard se API keys generate karna zaruri hai.
+- **Paper trading endpoint**: `https://paper-api.alpaca.markets` (paper trading test environment ke liye)[2][3].
+
+## 2. Account Management APIs:
+- **Account details check karna**
+  ```
+  GET /v2/account
+  ```
+  Account ki current status, buying power, cash, portfolio value, etc.[3]
+
+## 3. Order Management APIs:
+- **New order submit karna (Market Order)**
+  ```python
+  api.submit_order(symbol='BTCUSD', qty=1, side='buy', type='market', time_in_force='gtc')
+  ```
+  Yeh buy/sell market orders submit karta hai[1].
+  
+- **Limit Order submit karna**
+  ```java
+  alpacaAPI.orders().requestLimitOrder("TSLA", 100, OrderSide.BUY, OrderTimeInForce.DAY, 653.00, false);
+  ```
+  Yeh specific price limit par orders submit karta hai[5].
+
+- **Orders ki list aur status check karna**
+  ```
+  GET /v2/orders
+  GET /v2/orders/{order_id}
+  ```
+
+- **Order cancel ya replace karna**
+  ```java
+  alpacaAPI.orders().cancelAll(); // Sabhi open orders cancel karne ke liye
+  alpacaAPI.orders().replace(orderId, qty, timeInForce, newLimitPrice, null, null, null); // Order replace karne ke liye
+  ```
+  
+## 4. Position Management APIs:
+- **Open positions ki details lena**
+  ```
+  GET /v2/positions
+  GET /v2/positions/{symbol}
+  ```
+
+- **Position close karna**
+```java
+alpacaAPI.positions().close(symbol, null, percentageToClose);
+```
+Yeh kisi position ka kuch percent ya full position close karta hai[5].
+
+## 5. Asset Information APIs:
+- **Available Assets ki list lena**
+```
+GET /v2/assets
+GET /v2/assets/{symbol}
+```
+Assets ki availability aur tradability ki details check karta hai[5].
+
+## 6. Market Data APIs:
+- **Historical market data (Bars/Candlesticks)**
+```java
+alpacaAPI.marketData().getBars(symbol, startTime, endTime, null, null, limit, BarTimePeriod.HOUR, BarAdjustment.SPLIT);
+```
+Historical price data retrieve karta hai[5].
+
+- **Latest trade data lena**
+```java
+alpacaAPI.marketData().getLatestTrade("AAPL");
+```
+
+- **Quotes aur snapshots lena**
+```java
+alpacaAPI.marketData().getSnapshots(Arrays.asList("AAPL", "GME", "TSLA"));
+```
+Multiple stocks ka latest snapshot data retrieve karta hai[5].
+
+## 7. Clock & Calendar APIs:
+- **Market open/close status check karna**
+```
+GET /v2/clock
+```
+
+- **Market calendar aur holidays lena**
+```
+GET /v2/calendar
+```
+
+## Recommended Project Structure for Bot:
+Ek structured bot implementation ke liye recommended file structure:
+
+| File | Purpose |
+|------|---------|
+| `trading_classes.py` | Trading logic aur Alpaca API integration |
+| `main.py` | Application ka main entry point |
+| `config.yml` | Configuration settings |
+| `creds.cfg` | API credentials securely store karne ke liye |
+
+Is structure mein aap apni trading logic (`TradingOpportunities`) ko separate rakh sakte hain aur Alpaca API integration (`Alpaca class`) ko bhi clearly manage kar sakte hain[6].
+
+Yeh sabhi endpoints aur functionalities aapke Alpaca-based trading bot ke liye zaruri hain aur inhe implement karke aap ek robust automated trading system develop kar sakte hain.
+
+Citations:
+[1] https://alpaca.markets/learn/code-cryptocurrency-live-trading-bot-python-alpaca
+[2] https://github.com/plumti/alpaca-trading-bot-with-lumibot
+[3] https://alpaca.markets/deprecated/docs/api-documentation/api-v2/
+[4] https://alpaca.markets/learn/understanding-alpacas-market-data-api-with-pandas-and-plotly
+[5] https://alpaca.markets/learn/algorithmic-trading-java-with-alpaca
+[6] https://alpaca.markets/learn/building-an-end-to-end-trading-bot-using-alpacas-api-circleci-and-slack
+[7] https://docs.alpaca.markets/docs/getting-started
+
+---
+Answer from Perplexity: pplx.ai/share
