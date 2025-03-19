@@ -1,7 +1,7 @@
 import { AccountInfo, AlpacaPosition, OrderRequest, OrderResponse, MarketData } from "@shared/schema";
 
 // Flag to enable test mode for development
-const ENABLE_TEST_MODE = true;
+const ENABLE_TEST_MODE = false;
 
 export class AlpacaClient {
   private apiKey: string;
