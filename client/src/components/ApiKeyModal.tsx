@@ -27,7 +27,10 @@ export function ApiKeyModal({ isOpen, onClose, onSave, isSaving, environment }: 
   const { toast } = useToast();
 
   const handleSubmit = () => {
-    if (!apiKey || !secretKey) {
+    // Check if this is a test mode submission
+    const isTestMode = apiKey === 'TEST_KEY' || secretKey === 'TEST_KEY';
+    
+    if (!isTestMode && (!apiKey || !secretKey)) {
       toast({
         title: 'Missing Fields',
         description: 'Please enter both API Key and Secret Key',
@@ -36,7 +39,17 @@ export function ApiKeyModal({ isOpen, onClose, onSave, isSaving, environment }: 
       return;
     }
     
-    onSave(apiKey, secretKey, selectedEnvironment);
+    // Always use TEST_KEY for both if one is specified
+    if (isTestMode) {
+      onSave('TEST_KEY', 'TEST_KEY', selectedEnvironment);
+      toast({
+        title: 'Test Mode Activated',
+        description: 'Using test mode with simulated trading data',
+        variant: 'default'
+      });
+    } else {
+      onSave(apiKey, secretKey, selectedEnvironment);
+    }
   };
 
   return (
@@ -103,6 +116,7 @@ export function ApiKeyModal({ isOpen, onClose, onSave, isSaving, environment }: 
           <div className="text-xs text-[#B7BDC6] mt-2">
             <p>You can generate API keys from the <a href="https://app.alpaca.markets/paper/dashboard/overview" target="_blank" rel="noopener noreferrer" className="text-[#2962FF] hover:underline">Alpaca Dashboard</a>.</p>
             <p className="mt-1">Make sure to use the proper keys for {selectedEnvironment === 'paper' ? 'paper' : 'live'} trading.</p>
+            <p className="mt-1 text-[#00C853]">Tip: Enter "TEST_KEY" in either field to use test mode with simulated data.</p>
           </div>
         </div>
         

@@ -126,11 +126,8 @@ export function Sidebar({
             <button 
               className={`flex-1 ${apiKeyInfo?.environment === 'paper' ? 'bg-[#2962FF] text-white' : 'bg-[#121722] text-[#B7BDC6]'} py-1 rounded-l text-xs font-medium`}
               onClick={() => {
-                if (apiKeyInfo?.hasApiKey) {
-                  onSaveApiKey(apiKeyInfo.environment === 'paper' ? 'TEST_KEY' : 'TEST_KEY', 'TEST_KEY', 'paper');
-                } else {
-                  setIsApiKeyModalOpen(true);
-                }
+                // Always use TEST_KEY for paper trading
+                onSaveApiKey('TEST_KEY', 'TEST_KEY', 'paper');
               }}
             >
               Paper Trading
@@ -138,6 +135,7 @@ export function Sidebar({
             <button 
               className={`flex-1 ${apiKeyInfo?.environment === 'live' ? 'bg-[#2962FF] text-white' : 'bg-[#121722] text-[#B7BDC6]'} py-1 rounded-r text-xs`}
               onClick={() => {
+                // Always show modal for live trading to get real API keys
                 setIsApiKeyModalOpen(true);
               }}
             >
