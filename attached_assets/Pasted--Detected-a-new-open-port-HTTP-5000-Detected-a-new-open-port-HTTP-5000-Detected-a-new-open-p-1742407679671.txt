@@ -1,0 +1,39 @@
+ Detected a new open port HTTP:5000
+==> Detected a new open port HTTP:5000
+==> Detected a new open port HTTP:5000
+==> Detected service running on port 5000
+==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+6:05:22 PM [express] GET /api/default-user 200 in 5ms :: {"userId":1}
+6:05:22 PM [express] GET /api/positions/1 200 in 1ms :: []
+6:05:22 PM [express] GET /api/bot-settings/1 200 in 1ms :: {"userId":1,"isActive":false,"strategy":"…
+6:05:22 PM [express] GET /api/logs/1 200 in 0ms :: [{"userId":1,"level":"INFO","message":"Trading bo…
+6:05:22 PM [express] GET /api/metrics/1 200 in 0ms :: {"userId":1,"portfolioValue":25000,"buyingPowe…
+6:05:22 PM [express] GET /api/api-keys/1 404 in 0ms :: {"message":"API key not found"}
+6:05:22 PM [express] GET /api/trades/1 200 in 1ms :: []
+Alpaca API request failed: Error: Alpaca API Error: 401 - {"code":40110000,"message":"request is not authorized"}
+    at AlpacaClient.makeRequest (file:///opt/render/project/src/dist/index.js:222:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///opt/render/project/src/dist/index.js:2401:11
+API key validation error: Error: Alpaca API Error: 401 - {"code":40110000,"message":"request is not authorized"}
+    at AlpacaClient.makeRequest (file:///opt/render/project/src/dist/index.js:222:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///opt/render/project/src/dist/index.js:2401:11
+6:06:02 PM [express] POST /api/api-keys 400 in 484ms :: {"message":"Invalid API keys"}
+Alpaca API request failed: Error: Alpaca API Error: 401 - {"code":40110000,"message":"request is not authorized"}
+    at AlpacaClient.makeRequest (file:///opt/render/project/src/dist/index.js:222:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///opt/render/project/src/dist/index.js:2401:11
+API key validation error: Error: Alpaca API Error: 401 - {"code":40110000,"message":"request is not authorized"}
+    at AlpacaClient.makeRequest (file:///opt/render/project/src/dist/index.js:222:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///opt/render/project/src/dist/index.js:2401:11
+6:06:06 PM [express] POST /api/api-keys 400 in 70ms :: {"message":"Invalid API keys"}
+6:06:14 PM [express] POST /api/api-keys 400 in 206ms :: {"message":"Invalid API keys"}
+Alpaca API request failed: Error: Alpaca API Error: 401 - {"code":40110000,"message":"request is not authorized"}
+    at AlpacaClient.makeRequest (file:///opt/render/project/src/dist/index.js:222:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///opt/render/project/src/dist/index.js:2401:11
+API key validation error: Error: Alpaca API Error: 401 - {"code":40110000,"message":"request is not authorized"}
+    at AlpacaClient.makeRequest (file:///opt/render/project/src/dist/index.js:222:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///opt/render/project/src/dist/index.js:2401:11
