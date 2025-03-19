@@ -196,18 +196,26 @@ export function useAlpaca(userId: number | null) {
     mutationFn: async ({ apiKey, secretKey, environment }: { apiKey: string, secretKey: string, environment: 'paper' | 'live' }) => {
       if (!userId) throw new Error('User ID is required');
       
-      const response = await apiRequest('POST', '/api/api-keys', {
-        userId,
-        alpacaApiKey: apiKey,
-        alpacaSecretKey: secretKey,
-        environment
-      });
-      
-      return response.json();
+      try {
+        const response = await apiRequest('POST', '/api/api-keys', {
+          userId,
+          alpacaApiKey: apiKey,
+          alpacaSecretKey: secretKey,
+          environment
+        });
+        
+        return response.json();
+      } catch (error) {
+        console.error("Error saving API keys:", error);
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/api-keys'] });
       fetchApiKeyInfo();
+    },
+    onError: (error) => {
+      console.error("API Key mutation error:", error);
     }
   });
   

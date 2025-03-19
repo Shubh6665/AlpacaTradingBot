@@ -672,7 +672,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isTestMode = validatedData.alpacaApiKey === 'TEST_KEY' || 
                          validatedData.alpacaApiKey.startsWith('TEST_');
       
-      if (!isTestMode) {
+      // In test mode, set both keys to TEST_KEY for consistency
+      if (isTestMode) {
+        validatedData.alpacaApiKey = 'TEST_KEY';
+        validatedData.alpacaSecretKey = 'TEST_KEY';
+        
+        // Force paper trading in test mode
+        if (validatedData.environment === 'live') {
+          validatedData.environment = 'paper';
+          console.log("Test mode only supports paper trading - switching to paper environment");
+        }
+      } else {
         // Test the real API keys with Alpaca
         try {
           const alpaca = getAlpacaClient(
@@ -738,10 +748,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(404).json({ message: 'API key not found' });
     }
     
-    // Don't return the actual keys, just the environment
+    // Check if we're in test mode
+    const isTestMode = apiKey.alpacaApiKey === 'TEST_KEY' || 
+                       apiKey.alpacaApiKey.startsWith('TEST_');
+    
+    // Don't return the actual keys, just the environment and test mode status
     res.json({
       environment: apiKey.environment,
-      hasApiKey: true
+      hasApiKey: true,
+      isTestMode: isTestMode
     });
   });
   
