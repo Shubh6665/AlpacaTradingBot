@@ -40,7 +40,22 @@ function broadcastToUser(userId: number, data: any) {
 // Handle alpaca websocket messages
 async function handleAlpacaWebsocketMessage(userId: number, message: any) {
   try {
-    const marketData = parseAlpacaWebSocketMessage(message);
+    // Get API key to check if we're in test mode
+    const apiKey = await storage.getApiKeyByUserId(userId);
+    const isTestMode = apiKey?.alpacaApiKey === 'TEST_KEY' || 
+                       apiKey?.alpacaApiKey?.startsWith('TEST_');
+                       
+    // Handle both real Alpaca messages and our mock messages
+    let marketData: MarketData | null = null;
+    
+    if (message.type === 'mock') {
+      // For test mode with mock data
+      marketData = message.data;
+    } else {
+      // For real Alpaca API data
+      marketData = parseAlpacaWebSocketMessage(message);
+    }
+    
     if (!marketData) return;
     
     // Update market data cache
@@ -51,6 +66,60 @@ async function handleAlpacaWebsocketMessage(userId: number, message: any) {
       type: 'marketData',
       data: marketData
     });
+    
+    // Update positions if any exist for this symbol
+    const positions = await storage.getPositionsByUserId(userId);
+    const position = positions.find(p => p.symbol === marketData!.symbol);
+    
+    if (position) {
+      // Update position with new price data
+      const updatedPosition = await storage.updatePosition(position.id, {
+        currentPrice: marketData.price.toString(),
+        marketValue: (parseFloat(position.qty) * marketData.price).toString(),
+        unrealizedPl: (parseFloat(position.qty) * (marketData.price - parseFloat(position.entryPrice))).toString(),
+        unrealizedPlPerc: (((marketData.price - parseFloat(position.entryPrice)) / parseFloat(position.entryPrice)) * 100).toString()
+      });
+      
+      // Broadcast position update
+      broadcastToUser(userId, {
+        type: 'positionUpdate',
+        data: updatedPosition
+      });
+      
+      // In test mode, update performance metrics based on position changes
+      if (isTestMode) {
+        const metrics = await storage.getPerformanceMetricsByUserId(userId);
+        if (metrics) {
+          // Calculate total position value
+          let totalPositionValue = 0;
+          for (const pos of positions) {
+            totalPositionValue += parseFloat(pos.marketValue);
+          }
+          
+          // Calculate portfolio metrics
+          const buyingPower = parseFloat(metrics.buyingPower);
+          const newPortfolioValue = totalPositionValue + buyingPower;
+          const portfolioChange = newPortfolioValue - 25000; // Initial capital
+          const portfolioChangePerc = (portfolioChange / 25000) * 100;
+          
+          // Update performance metrics
+          await storage.updatePerformanceMetrics(metrics.id, {
+            portfolioValue: newPortfolioValue.toString(),
+            portfolioChange: portfolioChange.toString(),
+            portfolioChangePerc: portfolioChangePerc.toString()
+          });
+          
+          // Get updated metrics and broadcast
+          const updatedMetrics = await storage.getPerformanceMetricsByUserId(userId);
+          if (updatedMetrics) {
+            broadcastToUser(userId, {
+              type: 'metricsUpdate',
+              data: updatedMetrics
+            });
+          }
+        }
+      }
+    }
     
     // Get bot settings
     const botSettings = await storage.getBotSettingsByUserId(userId);
@@ -78,22 +147,28 @@ async function handleAlpacaWebsocketMessage(userId: number, message: any) {
         // Generate a signal using the RL model
         signal = rlStrategy.generateSignal(marketData.symbol, [marketData], historicalData);
         
+        // Add test mode indicator to logs if needed
+        const testMsg = isTestMode ? " (TEST MODE)" : "";
+        
         // Log the RL signal
         await storage.createSystemLog({
           userId,
           level: 'SIGNAL',
-          message: `AI Reinforcement Learning ${signal.action} signal for ${signal.symbol} (confidence: ${signal.confidence.toFixed(1)}%)`
+          message: `AI Reinforcement Learning ${signal.action} signal for ${signal.symbol} (confidence: ${signal.confidence.toFixed(1)}%)${testMsg}`
         });
       } else {
         // Use traditional strategies
         const strategy = createStrategy(botSettings.strategy as any);
         signal = strategy.analyze(marketData.symbol, [marketData], historicalData);
         
+        // Add test mode indicator to logs if needed
+        const testMsg = isTestMode ? " (TEST MODE)" : "";
+        
         // Log the traditional signal
         await storage.createSystemLog({
           userId,
           level: 'SIGNAL',
-          message: `${strategy.getName()} ${signal.action} signal detected for ${signal.symbol} (confidence: ${signal.confidence.toFixed(1)}%)`
+          message: `${strategy.getName()} ${signal.action} signal detected for ${signal.symbol} (confidence: ${signal.confidence.toFixed(1)}%)${testMsg}`
         });
       }
       
@@ -203,6 +278,10 @@ async function startTradingBot(userId: number) {
   
   if (!apiKey || !botSettings || !botSettings.isActive) return;
   
+  // Check if we're in test mode
+  const isTestMode = apiKey.alpacaApiKey === 'TEST_KEY' || 
+                     apiKey.alpacaApiKey.startsWith('TEST_');
+  
   // Initialize the reinforcement learning strategy if selected
   if (botSettings.strategy === 'reinforcement') {
     try {
@@ -224,11 +303,14 @@ async function startTradingBot(userId: number) {
         console.warn('No pre-trained RL model found, starting with untrained model:', err);
       });
       
+      // Add test mode indicator to logs if needed
+      const testMsg = isTestMode ? " (TEST MODE)" : "";
+      
       // Log RL model initialization
       await storage.createSystemLog({
         userId,
         level: 'INFO',
-        message: 'Reinforcement learning model initialized'
+        message: `Reinforcement learning model initialized${testMsg}`
       });
     } catch (error: any) {
       console.error('Error initializing reinforcement learning model:', error);
@@ -242,11 +324,12 @@ async function startTradingBot(userId: number) {
     }
   }
   
-  // Log bot start
+  // Log bot start with test mode indicator if needed
+  const testMsg = isTestMode ? " (TEST MODE)" : "";
   await storage.createSystemLog({
     userId,
     level: 'INFO',
-    message: `Bot started with ${botSettings.strategy} strategy`
+    message: `Bot started with ${botSettings.strategy} strategy${testMsg}`
   });
   
   // Broadcast bot status
