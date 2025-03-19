@@ -170,7 +170,27 @@ export class AlpacaClient {
 
   // Account endpoints
   async getAccount(): Promise<AccountInfo> {
-    return this.makeRequest("/v2/account");
+    try {
+      // Add a paper trading check to ensure proper endpoint usage
+      const isPaper = this.baseUrl.includes("paper-api");
+      const url = `${isPaper ? "https://paper-api.alpaca.markets" : "https://api.alpaca.markets"}/v2/account`;
+      
+      const response = await fetch(url, {
+        headers: {
+          "APCA-API-KEY-ID": this.apiKey,
+          "APCA-API-SECRET-KEY": this.secretKey
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Alpaca API Error: ${response.status} - ${await response.text()}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error("Account validation error:", error);
+      throw error;
+    }
   }
 
   // Market Data endpoints
