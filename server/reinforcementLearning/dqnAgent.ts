@@ -1,4 +1,5 @@
 import * as tf from '@tensorflow/tfjs-node';
+import * as path from 'path';
 import { TradingEnvironment } from './tradingEnvironment';
 
 /**
@@ -20,7 +21,8 @@ class ReplayBuffer {
   }
   
   add(state: tf.Tensor, action: number[], reward: number, nextState: tf.Tensor, done: boolean): void {
-    const experience = {
+    // Store tensors with keepDims to prevent garbage collection issues
+    const entry = {
       state: state.clone(),
       action,
       reward,
@@ -28,14 +30,14 @@ class ReplayBuffer {
       done
     };
     
-    this.buffer.push(experience);
+    this.buffer.push(entry);
     
-    // If buffer exceeds max size, remove oldest experiences
+    // Remove oldest entry if buffer exceeds max size
     if (this.buffer.length > this.maxSize) {
-      const oldestExperience = this.buffer.shift();
-      if (oldestExperience) {
-        oldestExperience.state.dispose();
-        oldestExperience.nextState.dispose();
+      const oldestEntry = this.buffer.shift();
+      if (oldestEntry) {
+        oldestEntry.state.dispose();
+        oldestEntry.nextState.dispose();
       }
     }
   }
@@ -48,32 +50,25 @@ class ReplayBuffer {
     done: boolean;
   }> {
     if (this.buffer.length < batchSize) {
-      return this.buffer.map(exp => ({
-        state: exp.state.clone(),
-        action: [...exp.action],
-        reward: exp.reward,
-        nextState: exp.nextState.clone(),
-        done: exp.done
-      }));
+      return this.buffer;
     }
     
-    const result = [];
-    const bufferLength = this.buffer.length;
-    
-    // Sample randomly from buffer
-    for (let i = 0; i < batchSize; i++) {
-      const index = Math.floor(Math.random() * bufferLength);
-      const exp = this.buffer[index];
-      result.push({
-        state: exp.state.clone(),
-        action: [...exp.action],
-        reward: exp.reward,
-        nextState: exp.nextState.clone(),
-        done: exp.done
-      });
+    const indices: Set<number> = new Set();
+    while (indices.size < batchSize) {
+      const idx = Math.floor(Math.random() * this.buffer.length);
+      indices.add(idx);
     }
     
-    return result;
+    return Array.from(indices).map(idx => {
+      const entry = this.buffer[idx];
+      return {
+        state: entry.state.clone(),
+        action: entry.action,
+        reward: entry.reward,
+        nextState: entry.nextState.clone(),
+        done: entry.done
+      };
+    });
   }
   
   size(): number {
@@ -81,11 +76,12 @@ class ReplayBuffer {
   }
   
   clear(): void {
-    // Dispose all tensors to prevent memory leaks
-    this.buffer.forEach(exp => {
-      exp.state.dispose();
-      exp.nextState.dispose();
+    // Dispose all tensors
+    this.buffer.forEach(entry => {
+      entry.state.dispose();
+      entry.nextState.dispose();
     });
+    
     this.buffer = [];
   }
 }
@@ -132,7 +128,7 @@ export class DQNAgent {
     epsilonMin: number = 0.01,
     epsilonDecay: number = 0.995,
     learningRate: number = 0.001,
-    batchSize: number = 64,
+    batchSize: number = 32,
     updateFrequency: number = 100
   ) {
     this.env = env;
@@ -145,14 +141,16 @@ export class DQNAgent {
     this.batchSize = batchSize;
     this.updateFrequency = updateFrequency;
     this.stateSize = stateSize;
-    this.actionSize = symbols.length * 3; // For each symbol: buy, hold, sell
-    this.replayBuffer = new ReplayBuffer();
+    this.actionSize = symbols.length; // One action per symbol
     
-    // Build networks
+    // Initialize replay buffer
+    this.replayBuffer = new ReplayBuffer(10000);
+    
+    // Build neural network models
     this.qNetwork = this.buildModel();
     this.targetNetwork = this.buildModel();
     
-    // Copy weights from Q network to target network
+    // Initialize target network with Q-network weights
     this.updateTargetNetwork();
   }
   
@@ -165,29 +163,29 @@ export class DQNAgent {
     
     // Input layer
     model.add(tf.layers.dense({
-      units: 128,
+      units: 64,
       activation: 'relu',
       inputShape: [this.stateSize]
     }));
     
     // Hidden layers
     model.add(tf.layers.dense({
-      units: 128,
-      activation: 'relu'
-    }));
-    
-    model.add(tf.layers.dense({
       units: 64,
       activation: 'relu'
     }));
     
-    // Output layer - one output per action
     model.add(tf.layers.dense({
-      units: this.actionSize,
-      activation: 'linear'
+      units: 32,
+      activation: 'relu'
     }));
     
-    // Compile the model
+    // Output layer - one output per symbol for actions
+    model.add(tf.layers.dense({
+      units: this.actionSize,
+      activation: 'tanh' // Using tanh for -1 to 1 range (sell/hold/buy)
+    }));
+    
+    // Compile model
     model.compile({
       optimizer: tf.train.adam(this.learningRate),
       loss: 'meanSquaredError'
@@ -200,8 +198,8 @@ export class DQNAgent {
    * Update the target network weights with Q-network weights
    */
   private updateTargetNetwork(): void {
-    const weights = this.qNetwork.getWeights();
-    this.targetNetwork.setWeights(weights.map(w => w.clone()));
+    const qWeights = this.qNetwork.getWeights();
+    this.targetNetwork.setWeights(qWeights);
   }
   
   /**
@@ -210,36 +208,20 @@ export class DQNAgent {
    * @returns Array of actions for each symbol
    */
   public act(state: tf.Tensor): number[] {
-    // Use epsilon-greedy policy for exploration vs exploitation
+    // Epsilon-greedy exploration
     if (Math.random() < this.epsilon) {
-      // Exploration: choose random actions
       return this.randomAction();
-    } else {
-      // Exploitation: choose best action based on Q-values
-      return tf.tidy(() => {
-        const stateTensor = state.expandDims(0);
-        const qValues = this.qNetwork.predict(stateTensor) as tf.Tensor;
-        
-        // Convert to array for easier processing
-        const qValuesArray = qValues.dataSync();
-        const actions: number[] = [];
-        
-        // For each symbol, choose an action: -1 (sell), 0 (hold), 1 (buy)
-        for (let i = 0; i < this.symbols.length; i++) {
-          const symbolQValues = [
-            qValuesArray[i * 3], // Buy
-            qValuesArray[i * 3 + 1], // Hold
-            qValuesArray[i * 3 + 2] // Sell
-          ];
-          
-          // Find the action with the highest Q-value
-          const maxIndex = symbolQValues.indexOf(Math.max(...symbolQValues));
-          actions.push(maxIndex === 0 ? 1 : maxIndex === 2 ? -1 : 0); // Map to -1, 0, 1
-        }
-        
-        return actions;
-      });
     }
+    
+    return tf.tidy(() => {
+      // Get action values from Q-network
+      const stateTensor = state.expandDims(0);
+      const actionValues = this.qNetwork.predict(stateTensor) as tf.Tensor;
+      
+      // Convert to array
+      const actions = actionValues.arraySync() as number[][];
+      return actions[0];
+    });
   }
   
   /**
@@ -248,10 +230,10 @@ export class DQNAgent {
    */
   private randomAction(): number[] {
     const actions: number[] = [];
-    for (let i = 0; i < this.symbols.length; i++) {
-      // Randomly choose between -1 (sell), 0 (hold), 1 (buy)
-      const randomChoice = Math.floor(Math.random() * 3) - 1;
-      actions.push(randomChoice);
+    for (let i = 0; i < this.actionSize; i++) {
+      // Random value between -1 and 1
+      const randomAction = Math.random() * 2 - 1;
+      actions.push(randomAction);
     }
     return actions;
   }
@@ -273,55 +255,54 @@ export class DQNAgent {
    * @returns Training loss
    */
   public async train(): Promise<number> {
-    // Skip if not enough experiences in buffer
     if (this.replayBuffer.size() < this.batchSize) {
       return 0;
     }
     
-    // Sample a batch of experiences
+    // Sample random batch from replay buffer
     const batch = this.replayBuffer.sample(this.batchSize);
     
     // Prepare batch data
-    const states = tf.concat(batch.map(exp => exp.state.expandDims(0)));
-    const nextStates = tf.concat(batch.map(exp => exp.nextState.expandDims(0)));
+    const states = tf.concat(batch.map(experience => experience.state.expandDims(0)));
+    const nextStates = tf.concat(batch.map(experience => experience.nextState.expandDims(0)));
     
-    // Get Q values for current states
+    // Calculate Q values for current states
     const qValues = this.qNetwork.predict(states) as tf.Tensor;
     
-    // Get Q values for next states from target network
-    const targetQValues = this.targetNetwork.predict(nextStates) as tf.Tensor;
+    // Calculate Q values for next states using target network
+    const nextQValues = this.targetNetwork.predict(nextStates) as tf.Tensor;
     
-    // Prepare target Q values by combining current Q values with rewards
-    const updatedQValues = tf.tidy(() => {
-      const qValuesArray = qValues.arraySync() as number[][];
-      const targetQValuesArray = targetQValues.arraySync() as number[][];
-      
-      // Update Q values for actions taken
-      for (let i = 0; i < this.batchSize; i++) {
-        for (let j = 0; j < this.symbols.length; j++) {
-          // Get action index (convert -1, 0, 1 to 0, 1, 2)
-          const actionIdx = batch[i].action[j] + 1;
-          
-          // Calculate target Q value
-          const targetIdx = j * 3 + actionIdx;
-          const reward = batch[i].reward;
-          const nextQ = targetQValuesArray[i][targetIdx];
-          const target = reward + (batch[i].done ? 0 : this.gamma * nextQ);
-          
-          // Update Q value for the action taken
-          qValuesArray[i][targetIdx] = target;
+    // Create array for updated target Q values
+    const targetQValues = qValues.arraySync() as number[][];
+    const nextQArray = nextQValues.arraySync() as number[][];
+    
+    // Update target Q values with Bellman equation
+    batch.forEach((experience, i) => {
+      for (let j = 0; j < this.actionSize; j++) {
+        if (j === this.symbols.indexOf(this.symbols[j])) {
+          // Only update the Q value for the action that was taken
+          // for the corresponding symbol
+          if (experience.done) {
+            targetQValues[i][j] = experience.reward;
+          } else {
+            targetQValues[i][j] = experience.reward + this.gamma * nextQArray[i][j];
+          }
         }
       }
-      
-      return tf.tensor(qValuesArray);
     });
     
-    // Train the model
-    const history = await this.qNetwork.fit(states, updatedQValues, {
+    // Train model with updated targets
+    const targetTensor = tf.tensor(targetQValues);
+    const history = await this.qNetwork.fit(states, targetTensor, {
       epochs: 1,
       batchSize: this.batchSize,
       verbose: 0
     });
+    
+    // Update epsilon with decay
+    if (this.epsilon > this.epsilonMin) {
+      this.epsilon *= this.epsilonDecay;
+    }
     
     // Update target network periodically
     this.stepCount++;
@@ -329,17 +310,12 @@ export class DQNAgent {
       this.updateTargetNetwork();
     }
     
-    // Decay epsilon
-    if (this.epsilon > this.epsilonMin) {
-      this.epsilon *= this.epsilonDecay;
-    }
-    
     // Clean up tensors
     states.dispose();
     nextStates.dispose();
     qValues.dispose();
-    targetQValues.dispose();
-    updatedQValues.dispose();
+    nextQValues.dispose();
+    targetTensor.dispose();
     
     return history.history.loss[0] as number;
   }
@@ -357,19 +333,14 @@ export class DQNAgent {
    * @param path File path
    */
   public async loadModel(path: string): Promise<void> {
-    this.qNetwork = await tf.loadLayersModel(`file://${path}`);
-    this.targetNetwork = await tf.loadLayersModel(`file://${path}`);
-    
-    // Recompile the models
-    this.qNetwork.compile({
-      optimizer: tf.train.adam(this.learningRate),
-      loss: 'meanSquaredError'
-    });
-    
-    this.targetNetwork.compile({
-      optimizer: tf.train.adam(this.learningRate),
-      loss: 'meanSquaredError'
-    });
+    try {
+      this.qNetwork = await tf.loadLayersModel(`file://${path}.json`);
+      this.targetNetwork = await tf.loadLayersModel(`file://${path}.json`);
+      console.log('Model loaded successfully');
+    } catch (error) {
+      console.error('Failed to load model:', error);
+      throw error;
+    }
   }
   
   /**
@@ -383,63 +354,59 @@ export class DQNAgent {
   public async trainAgent(
     episodes: number,
     maxStepsPerEpisode: number,
-    savePath?: string,
+    savePath: string,
     logInterval: number = 10
-  ): Promise<{ episode: number; reward: number; loss: number }[]> {
-    const history: { episode: number; reward: number; loss: number }[] = [];
+  ): Promise<{ episode: number; reward: number; loss: number; epsilon: number }[]> {
+    const history: { episode: number; reward: number; loss: number; epsilon: number }[] = [];
     
     for (let episode = 0; episode < episodes; episode++) {
       let state = this.env.reset();
       let totalReward = 0;
-      let totalLoss = 0;
-      let steps = 0;
+      let losses: number[] = [];
       
-      // Run one episode
-      while (steps < maxStepsPerEpisode) {
+      for (let step = 0; step < maxStepsPerEpisode; step++) {
         // Choose action
         const action = this.act(state);
         
-        // Take action
+        // Take action in environment
         const [nextState, reward, done] = this.env.step(action);
         
-        // Remember experience
+        // Store experience in replay buffer
         this.remember(state, action, reward, nextState, done);
         
-        // Train
+        // Train model
         const loss = await this.train();
-        totalLoss += loss;
+        losses.push(loss);
         
-        // Update state and reward
+        // Update state and rewards
         state = nextState;
         totalReward += reward;
-        steps++;
         
-        // Break if done
         if (done) break;
       }
       
-      // Save progress
-      history.push({
-        episode,
-        reward: totalReward,
-        loss: totalLoss / steps
-      });
-      
       // Log progress
-      if (episode % logInterval === 0) {
-        console.log(`Episode ${episode}/${episodes}, Reward: ${totalReward.toFixed(2)}, Avg Loss: ${(totalLoss / steps).toFixed(4)}, Epsilon: ${this.epsilon.toFixed(4)}`);
+      if ((episode + 1) % logInterval === 0) {
+        const avgLoss = losses.reduce((sum, val) => sum + val, 0) / losses.length;
+        console.log(`Episode ${episode + 1}/${episodes}, Reward: ${totalReward.toFixed(2)}, Avg Loss: ${avgLoss.toFixed(6)}, Epsilon: ${this.epsilon.toFixed(4)}`);
+        
+        // Save model periodically
+        const modelPath = path.join(savePath, `dqn_model_${episode + 1}`);
+        await this.saveModel(modelPath);
       }
       
-      // Save model
-      if (savePath && episode % 50 === 0) {
-        await this.saveModel(`${savePath}/dqn_model_episode_${episode}`);
-      }
+      // Record history
+      history.push({
+        episode: episode + 1,
+        reward: totalReward,
+        loss: losses.reduce((sum, val) => sum + val, 0) / losses.length,
+        epsilon: this.epsilon
+      });
     }
     
-    // Final save
-    if (savePath) {
-      await this.saveModel(`${savePath}/dqn_model_final`);
-    }
+    // Save final model
+    const finalModelPath = path.join(savePath, 'dqn_model_final');
+    await this.saveModel(finalModelPath);
     
     return history;
   }
@@ -451,27 +418,13 @@ export class DQNAgent {
    */
   public predict(state: tf.Tensor): number[] {
     return tf.tidy(() => {
+      // Get action values from Q-network
       const stateTensor = state.expandDims(0);
-      const qValues = this.qNetwork.predict(stateTensor) as tf.Tensor;
+      const actionValues = this.qNetwork.predict(stateTensor) as tf.Tensor;
       
-      // Convert to array for easier processing
-      const qValuesArray = qValues.dataSync();
-      const actions: number[] = [];
-      
-      // For each symbol, choose an action: -1 (sell), 0 (hold), 1 (buy)
-      for (let i = 0; i < this.symbols.length; i++) {
-        const symbolQValues = [
-          qValuesArray[i * 3], // Buy
-          qValuesArray[i * 3 + 1], // Hold
-          qValuesArray[i * 3 + 2] // Sell
-        ];
-        
-        // Find the action with the highest Q-value
-        const maxIndex = symbolQValues.indexOf(Math.max(...symbolQValues));
-        actions.push(maxIndex === 0 ? 1 : maxIndex === 2 ? -1 : 0); // Map to -1, 0, 1
-      }
-      
-      return actions;
+      // Convert to array
+      const actions = actionValues.arraySync() as number[][];
+      return actions[0];
     });
   }
 }

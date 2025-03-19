@@ -1,4 +1,5 @@
 import { MarketData, StrategySignal } from "@shared/schema";
+import { getReinforcementLearningStrategy } from "./reinforcementLearning";
 
 export type StrategyType = 'mean_reversion' | 'momentum' | 'ppo' | 'reinforcement';
 
@@ -305,15 +306,13 @@ export class PPOStrategy implements TradingStrategy {
   }
 }
 
-// Reinforcement Learning Strategy (simplified implementation - in a real system, this would use a trained model)
+// Advanced Reinforcement Learning Strategy (using TensorFlow.js implementation)
 export class ReinforcementLearningStrategy implements TradingStrategy {
   type: StrategyType = 'reinforcement';
+  private rlStrategy = getReinforcementLearningStrategy();
   
   analyze(symbol: string, data: MarketData[], historicalData?: MarketData[]): StrategySignal {
-    // This is a simplified placeholder. In a real RL system, this would use a trained model
-    // that would take the current state and predict the best action.
-    
-    // For this implementation, we'll use a simple logic based on recent price movements
+    // Use the full reinforcement learning implementation
     if (!data || data.length < 2) {
       return {
         symbol,
@@ -323,44 +322,40 @@ export class ReinforcementLearningStrategy implements TradingStrategy {
       };
     }
     
-    const lastPrice = data[data.length - 1].price;
-    const previousPrice = data[data.length - 2].price;
-    const priceChange = (lastPrice - previousPrice) / previousPrice;
-    
-    let action: 'buy' | 'sell' | 'hold' = 'hold';
-    let confidence = 50; // Middle confidence for RL strategy since it's simplified
-    
-    if (priceChange > 0.01) {
-      action = 'buy';
-    } else if (priceChange < -0.01) {
-      action = 'sell';
+    try {
+      // Generate signal using our reinforcement learning model
+      const signal = this.rlStrategy.generateSignal(symbol, data, historicalData);
+      return signal;
+    } catch (error) {
+      console.error('Error in reinforcement learning strategy:', error);
+      
+      // Fallback logic in case of error
+      return {
+        symbol,
+        action: 'hold',
+        confidence: 0,
+        timestamp: Date.now()
+      };
     }
-    
-    return {
-      symbol,
-      action,
-      confidence,
-      timestamp: Date.now()
-    };
   }
   
   getParameters(): Record<string, any> {
     return {
-      // In a real RL system, this might return hyperparameters or model configuration
-      modelType: 'simplified'
+      modelType: 'dqn',
+      description: 'Deep Q-Network reinforcement learning model for trading'
     };
   }
   
   setParameters(_params: Record<string, any>): void {
-    // No parameters to set in this simplified implementation
+    // Parameters are managed internally by the RL implementation
   }
   
   getName(): string {
-    return 'Reinforcement Learning';
+    return 'AI Reinforcement Learning';
   }
   
   getDescription(): string {
-    return 'Uses machine learning to learn optimal trading strategies through interaction with the market.';
+    return 'Advanced machine learning model that learns optimal trading strategies through market interaction using deep reinforcement learning.';
   }
 }
 
