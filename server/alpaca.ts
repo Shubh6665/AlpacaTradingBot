@@ -38,8 +38,8 @@ export class AlpacaClient {
     const url = `${isData ? this.dataUrl : this.baseUrl}${endpoint}`;
     
     const headers = {
-      "APCA-API-KEY-ID": this.apiKey,
-      "APCA-API-SECRET-KEY": this.secretKey,
+      "APCA_API_KEY_ID": this.apiKey,
+      "APCA_API_SECRET_KEY": this.secretKey,
       "Content-Type": "application/json",
     };
 
@@ -177,8 +177,8 @@ export class AlpacaClient {
       
       const response = await fetch(url, {
         headers: {
-          "APCA-API-KEY-ID": this.apiKey,
-          "APCA-API-SECRET-KEY": this.secretKey
+          "APCA_API_KEY_ID": this.apiKey,
+          "APCA_API_SECRET_KEY": this.secretKey
         }
       });
       
@@ -356,8 +356,8 @@ export function getAlpacaClient(apiKey?: string, secretKey?: string, isPaper: bo
   
   // Use singleton for environment variables or test mode
   if (!alpacaInstance) {
-    const envApiKey = process.env.APCA-API-KEY-ID || "TEST_KEY";
-    const envSecretKey = process.env.APCA-API-SECRET-KEY || "TEST_SECRET";
+    const envApiKey = process.env.APCA_API_KEY_ID || "TEST_KEY";
+    const envSecretKey = process.env.APCA_API_SECRET_KEY || "TEST_SECRET";
     
     alpacaInstance = new AlpacaClient(envApiKey, envSecretKey, isPaper);
   }
