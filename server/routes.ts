@@ -416,15 +416,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Connect to Alpaca websocket if API key exists
           if (apiKey) {
-            // In a real system, we would connect to Alpaca's websocket here
-            // For this implementation, we'll simulate market data
+            // Check if we're in test mode
+            const isTestMode = apiKey.alpacaApiKey === 'TEST_KEY' || 
+                             apiKey.alpacaApiKey.startsWith('TEST_');
+                             
+            // Get the Alpaca client instance
+            const alpaca = getAlpacaClient(
+              apiKey.alpacaApiKey,
+              apiKey.alpacaSecretKey,
+              apiKey.environment === 'paper'
+            );
             
-            // Log connection
-            await storage.createSystemLog({
-              userId,
-              level: 'INFO',
-              message: 'WebSocket connection established'
-            });
+            // In a real system, we would connect to Alpaca's actual websocket here
+            // For test mode or simulation, generate mock market data
+            if (isTestMode) {
+              // Log that we're in test mode
+              const testMsg = " (TEST MODE)";
+              await storage.createSystemLog({
+                userId,
+                level: 'INFO',
+                message: 'WebSocket connection established' + testMsg
+              });
+              
+              // Generate mock market data for common crypto symbols
+              const symbols = ['BTCUSD', 'ETHUSD', 'SOLUSD', 'AVAXUSD'];
+              const dataInterval = 5000; // 5 seconds interval
+              
+              // Create an interval to continuously generate market data
+              const dataIntervalId = setInterval(() => {
+                if (!activeConnections.has(userId)) {
+                  clearInterval(dataIntervalId);
+                  return;
+                }
+                
+                // For each symbol, generate a mock data point
+                symbols.forEach(symbol => {
+                  const mockData = alpaca.generateMockMarketData(symbol);
+                  
+                  // Create a websocket message format
+                  const message = {
+                    type: 'mock',
+                    data: mockData
+                  };
+                  
+                  // Process the mock message through the same pipeline
+                  handleAlpacaWebsocketMessage(userId, message);
+                });
+              }, dataInterval);
+            } else {
+              // Log connection (real mode)
+              await storage.createSystemLog({
+                userId,
+                level: 'INFO',
+                message: 'WebSocket connection established'
+              });
+            }
             
             // Start the trading bot if it's active
             if (botSettings?.isActive) {
@@ -539,17 +585,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = insertApiKeySchema.parse(req.body);
       
-      // Test the API key
-      try {
-        const alpaca = getAlpacaClient(
-          validatedData.alpacaApiKey, 
-          validatedData.alpacaSecretKey, 
-          validatedData.environment === 'paper'
-        );
-        
-        await alpaca.getAccount();
-      } catch (error) {
-        return res.status(400).json({ message: 'Invalid API keys' });
+      // Check if these are test mode API keys
+      const isTestMode = validatedData.alpacaApiKey === 'TEST_KEY' || 
+                         validatedData.alpacaApiKey.startsWith('TEST_');
+      
+      if (!isTestMode) {
+        // Test the real API keys with Alpaca
+        try {
+          const alpaca = getAlpacaClient(
+            validatedData.alpacaApiKey, 
+            validatedData.alpacaSecretKey, 
+            validatedData.environment === 'paper'
+          );
+          
+          await alpaca.getAccount();
+        } catch (error) {
+          console.error("API key validation error:", error);
+          return res.status(400).json({ message: 'Invalid API keys' });
+        }
       }
       
       // Check if user already has an API key
@@ -564,16 +617,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Log API key update
+      const modeMsg = isTestMode ? " (TEST MODE)" : "";
       await storage.createSystemLog({
         userId: validatedData.userId,
         level: 'INFO',
-        message: `API keys ${existingApiKey ? 'updated' : 'configured'} for ${validatedData.environment} environment`
+        message: `API keys ${existingApiKey ? 'updated' : 'configured'} for ${validatedData.environment} environment${modeMsg}`
       });
       
       // Broadcast API key status
       broadcastToUser(validatedData.userId, {
         type: 'apiKeyUpdate',
-        data: { hasApiKey: true, environment: validatedData.environment }
+        data: { 
+          hasApiKey: true, 
+          environment: validatedData.environment, 
+          isTestMode: isTestMode 
+        }
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -720,7 +778,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'API key not configured' });
       }
       
-      // Submit order to Alpaca
+      // Check if we're in test mode
+      const isTestMode = apiKey.alpacaApiKey === 'TEST_KEY' || 
+                          apiKey.alpacaApiKey.startsWith('TEST_');
+      
+      // Submit order to Alpaca (will use mock data in test mode)
       const alpaca = getAlpacaClient(
         apiKey.alpacaApiKey, 
         apiKey.alpacaSecretKey, 
@@ -729,11 +791,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const order = await alpaca.submitOrder(validatedOrder);
       
-      // Log the order
+      // Log the order with test mode indicator if needed
+      const testMsg = isTestMode ? " (TEST MODE)" : "";
       await storage.createSystemLog({
         userId: parseInt(userId),
         level: 'TRADE',
-        message: `Manual ${order.side.toUpperCase()} order submitted: ${order.qty} ${order.symbol} @ ${order.type} price`
+        message: `Manual ${order.side.toUpperCase()} order submitted: ${order.qty} ${order.symbol} @ ${order.type} price${testMsg}`
       });
       
       // Create trade record
@@ -780,7 +843,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'API key not configured' });
       }
       
-      // Close position
+      // Check if we're in test mode
+      const isTestMode = apiKey.alpacaApiKey === 'TEST_KEY' || 
+                        apiKey.alpacaApiKey.startsWith('TEST_');
+      
+      // Close position through Alpaca client (will use mocked data in test mode)
       const alpaca = getAlpacaClient(
         apiKey.alpacaApiKey, 
         apiKey.alpacaSecretKey, 
@@ -790,10 +857,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await alpaca.closePosition(symbol);
       
       // Log the action
+      const testMsg = isTestMode ? " (TEST MODE)" : "";
       await storage.createSystemLog({
         userId: parseInt(userId),
         level: 'TRADE',
-        message: `Position closed: ${symbol}`
+        message: `Position closed: ${symbol}${testMsg}`
       });
       
       // Delete the position from storage
