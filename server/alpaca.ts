@@ -14,7 +14,7 @@ export class AlpacaClient {
     this.apiKey = apiKey;
     this.secretKey = secretKey;
     this.baseUrl = isPaper
-      ? "https://paper-api.alpaca.markets/v2"
+      ? "https://paper-api.alpaca.markets"
       : "https://api.alpaca.markets";
     this.dataUrl = "https://data.alpaca.markets";
     
