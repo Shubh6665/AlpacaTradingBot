@@ -10,7 +10,7 @@ export class AlpacaClient {
   private dataUrl: string;
   private isTestMode: boolean;
 
-  constructor(apiKey: string, secretKey: string, : boolean = true) {
+  constructor(apiKey: string, secretKey: string, isPaper: boolean = true) {
     this.apiKey = apiKey;
     this.secretKey = secretKey;
     this.baseUrl = isPaper
