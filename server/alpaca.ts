@@ -11,7 +11,7 @@ export class AlpacaClient {
   private isTestMode: boolean;
 
   constructor(apiKey: string, secretKey: string, isPaper: boolean = true) {
-    // Use environment variable names as per Alpaca documentation (underscores)
+    // Use environment variable names as per Alpaca docs (underscores)
     this.apiKey = apiKey;
     this.secretKey = secretKey;
     this.baseUrl = isPaper
@@ -19,7 +19,7 @@ export class AlpacaClient {
       : "https://api.alpaca.markets";
     this.dataUrl = "https://data.alpaca.markets";
     
-    // Test mode: if ENABLE_TEST_MODE true and key is a test key, then use mock data
+    // In test mode, allow keys like 'TEST_KEY' to pass validation
     this.isTestMode = ENABLE_TEST_MODE &&
       (this.apiKey === 'TEST_KEY' || this.apiKey.startsWith('TEST_'));
   }
@@ -30,13 +30,13 @@ export class AlpacaClient {
     data?: any,
     isData: boolean = false
   ): Promise<any> {
+    // Return mock data if in test mode
     if (this.isTestMode) {
       return this.getMockData(endpoint, method, data);
     }
     
     const url = `${isData ? this.dataUrl : this.baseUrl}${endpoint}`;
-    
-    // Correct header names as per official docs: use underscores not dashes.
+    // Correct header names using underscores
     const headers = {
       "APCA_API_KEY_ID": this.apiKey,
       "APCA_API_SECRET_KEY": this.secretKey,
@@ -62,7 +62,7 @@ export class AlpacaClient {
     }
   }
   
-  // Generate mock data for testing (only used in test mode)
+  // Generate mock data for testing (used only in test mode)
   private getMockData(endpoint: string, method: string, data?: any): any {
     if (endpoint === "/v2/account") {
       return {
@@ -157,7 +157,7 @@ export class AlpacaClient {
     return {};
   }
 
-  // Account endpoint: fetch account info from Alpaca
+  // Account endpoint: fetch account information
   async getAccount(): Promise<AccountInfo> {
     try {
       const isPaper = this.baseUrl.includes("paper-api");
@@ -242,7 +242,7 @@ export class AlpacaClient {
     return this.makeRequest("/v2/positions", "DELETE");
   }
 
-  // WebSocket connection string for market data streaming
+  // WebSocket connection string for market data
   getWebSocketUrl(): string {
     if (this.isTestMode) {
       return 'ws://localhost:8080/mock';
@@ -319,7 +319,7 @@ export class AlpacaClient {
   }
 }
 
-// Singleton instance with environment variables
+// Singleton instance using environment variables
 let alpacaInstance: AlpacaClient | null = null;
 
 export function getAlpacaClient(apiKey?: string, secretKey?: string, isPaper: boolean = true): AlpacaClient {
